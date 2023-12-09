@@ -1,0 +1,4 @@
+class: delphix.catalog.LocalCatalog
+params:
+  entries:
+    - train_file_name: "./data/iris.csv"

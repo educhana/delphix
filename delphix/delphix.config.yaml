@@ -1,0 +1,8 @@
+
+
+dependencies:
+    - catalog:
+        - class: delphix.core.catalog.LocalCatalog
+        - parameters:
+            - entries:
+                - train_file_name: "./data/iris.csv"

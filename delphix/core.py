@@ -7,7 +7,7 @@ from typing import Dict, List
 
 
 class Task:
-    def __init__(self, func, name=None, inputs=None, outputs=None, dependencies=None):
+    def __init__(self, func, name=None, inputs=None, dependencies=None):
         self.func = func
         self.name = name if name is not None else func.__name__
         # convert inputs to dict
@@ -20,7 +20,6 @@ class Task:
             self.inputs = inputs.copy()
         else:
             raise TypeError("inputs must be a list, tuple or dict")
-        self.outputs = outputs
         self.dependencies = dependencies
 
     def get_param_types(self):
@@ -34,60 +33,39 @@ class Task:
         return func_return
 
     def run(self, context_vars, task_outputs):
-        # build arguments for the function
-        arguments = {}
-        func_signature = inspect.signature(self.func)
-        func_params = func_signature.parameters
-        for param_name, param in func_params.items():
-            if param_name in self.inputs:
-                arguments[param_name] = eval(self.inputs[param_name], task_outputs, None)  # TODO: replace eval
-            else:
-                var_name = resolve_var_name(context_vars, self.name, param_name)
-                if var_name is not None:
-                    arguments[param_name] = context_vars[var_name]
-                    print(f"Resolved {self.name}::{param_name} to {var_name}")
-        # call function with arguments
-        result = call_func_with_arguments(self.func, arguments)
+        # build arguments for the function, 
+        args = []   
+        kwargs = {}
+        # for each param of the function
+        for param_name, param in inspect.signature(self.func).parameters.items():
+            param_value = inspect.Parameter.empty  # mark there is no value yet
+            fq_param_name = f"{self.name}__{param_name}"  # fully qualified param name
+            if param_name in self.inputs:  # first check if param is an input from other tasks
+                param_value = eval(self.inputs[param_name], task_outputs, None)  # TODO: replace eval
+            elif fq_param_name in context_vars: # now if fully qualified param name is in context vars
+                    param_value = context_vars[fq_param_name]
+            elif param_name in context_vars:    # now if param name is in context vars
+                    param_value = context_vars[param_name]
+            # if not value, check in config dependencies
+            if param_value is inspect.Parameter.empty:
+                if param_name in config._vars:
+                    param_value = config._vars[param_name]
+            # if we have a value, check if its positional or keyword
+            if param_value is not inspect.Parameter.empty:
+                if param.kind == param.POSITIONAL_ONLY:
+                    args.append(param_value)
+                else:
+                    kwargs[param_name] = param_value
+        # now call the function
+        result = self.func(*args, **kwargs)
         return result
 
 
 
 
-def call_func_with_arguments(func, arguments):
-    # separate args and kwargs inspecting the function signature
-    func_signature = inspect.signature(func)
-    func_params = func_signature.parameters
-    args = []
-    kwargs = {}
-    for param_name, param in func_params.items():
-        if param_name in arguments:
-            if param.kind == param.POSITIONAL_ONLY:
-                args.append(arguments[param_name])
-            else:
-                kwargs[param_name] = arguments[param_name]
-        else:
-            # positional with default value. leave it as is
-            if param.default is param.empty:
-                #raise ValueError(f"param '{param_name}' is not bound to any value")
-                pass
-
-    # call function with args and kwargs
-    return func(*args, **kwargs)
 
 
-def resolve_var_name(context_vars, namespace, param_name):
-    fq_param_name = f"{namespace}__{param_name}"
-    if fq_param_name in context_vars:
-        return fq_param_name
-    if param_name in context_vars:
-        return param_name
-    else:
-        partial_param_name = f"__{param_name}"
-        for param in context_vars.keys():
-            if param.endswith(partial_param_name):
-                return param
-    # cannot resolve parameter name
-    return None
+
 
 
 class Pipeline:
@@ -135,17 +113,35 @@ class Pipeline:
             task_outputs[task.name] = result
 
 
-from dependency_injector import containers, providers
-from dependency_injector.wiring import Provide, inject
 
-class Container(containers.DeclarativeContainer):
 
-    config = providers.Configuration()
+class Config:
+    def __init__(self):
+        self._vars = {}
 
-    mlflow = __import__("mlflow")
+
+
+    def add_dependency(self, name, dependency):
+        self._vars[name] = dependency
+
+
+    def resolve_dependency(self, name, namespace=None):
+        if namespace is not None:
+            fq_name = f"{namespace}__{name}"
+            if fq_name in self._vars:
+                return self._vars[fq_name]
+        else:
+            if name in self._vars:
+                return self._vars[name]
+        # if we get here, dependency not found
+        raise KeyError(f"Dependency '{name}' not found")
     
+_config = Config()
 
-container = Container()
+@property
+def config():
+    return _config
+
 
 
 # main
