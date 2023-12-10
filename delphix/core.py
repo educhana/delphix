@@ -3,24 +3,41 @@
 
 import inspect
 from typing import Dict, List
+from .config import config
 
+
+
+
+
+def extract_dependency_name(expr: str) -> str:
+    # regex to extract valid python identifier from start of string
+    import re
+    match = re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*", expr)
+    if match is None:
+        raise ValueError(f"Invalid dependency expression '{expr}'")
+    return match.group(0)
 
 
 class Task:
-    def __init__(self, func, name=None, inputs=None, dependencies=None):
+    def __init__(self, func, name=None, inputs=None, dependencies:List[str]=None):
         self.func = func
         self.name = name if name is not None else func.__name__
+        self.dependencies = dependencies if dependencies is not None else []
         # convert inputs to dict
-        if inputs is None:
-            self.inputs = {}
-        elif isinstance(inputs, (list, tuple)):
-            func_params = self.get_param_types()
-            self.inputs = {param_name: param_input for param_name, param_input in zip(func_params.keys(), inputs)}
-        elif isinstance(inputs, dict):
-            self.inputs = inputs.copy()
-        else:
-            raise TypeError("inputs must be a list, tuple or dict")
-        self.dependencies = dependencies
+        self.inputs = {}
+        if inputs: 
+            if isinstance(inputs, (list, tuple)):
+                func_params = self.get_param_types()
+                for param_name, param_input in zip(func_params.keys(), inputs):
+                    self.inputs[param_name] = param_input
+                    self.dependencies.append(extract_dependency_name(param_input))
+            elif isinstance(inputs, dict):
+                self.inputs =  inputs.copy()
+                for param_input in inputs.values():
+                    self.dependencies.append(extract_dependency_name(param_input))
+            else:
+                raise TypeError("inputs must be a list, tuple or dict")
+
 
     def get_param_types(self):
         func_signature = inspect.signature(self.func)
@@ -105,42 +122,15 @@ class Pipeline:
         return inferred_pipe_params
 
     def run(self, **kwargs):
-        task_outputs = {}  # all task outputs
-        # for each task, resolve inputs and run it
-        for task in self.tasks.values():
-            result = task.run(kwargs, task_outputs)
-            # save task output for later resolution of other tasks inputs
-            task_outputs[task.name] = result
+        scheduler = config.resolve_dependency("scheduler")
+        return scheduler.run_tasks(self.tasks.values(), **kwargs)
 
 
 
 
-class Config:
-    def __init__(self):
-        self._vars = {}
 
 
 
-    def add_dependency(self, name, dependency):
-        self._vars[name] = dependency
-
-
-    def resolve_dependency(self, name, namespace=None):
-        if namespace is not None:
-            fq_name = f"{namespace}__{name}"
-            if fq_name in self._vars:
-                return self._vars[fq_name]
-        else:
-            if name in self._vars:
-                return self._vars[name]
-        # if we get here, dependency not found
-        raise KeyError(f"Dependency '{name}' not found")
-    
-_config = Config()
-
-@property
-def config():
-    return _config
 
 
 
