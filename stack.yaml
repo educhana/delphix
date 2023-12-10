@@ -1,5 +1,8 @@
 
-- instance: !Scheduler
+services:
+  scheduler:
     class: delphix.scheduler.LocalScheduler
     params:
       train_file_name: "./data/iris.csv"
+
+      

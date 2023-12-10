@@ -1,4 +1,5 @@
-from delphix.core import Pipeline, Task, config
+from delphix.core import Pipeline, config
+from delphix.naive import Task
 from example.steps.load_data_step import train_test_data
 from example.steps.train_model_step import train_model, evaluate_model
 

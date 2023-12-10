@@ -2,8 +2,8 @@
 
 from typing import List, Dict, Protocol
 
-#from delphix.core import Task
-class Task: pass
+from .core import Task
+
 
 class Scheduler(Protocol):
 
